@@ -97,7 +97,8 @@ if(nrow(bbs_data) == 0L){
     dplyr::mutate(
       tz = as.character(lutz::tz_lookup_coords(lat = LATITUDE, lon = LONGITUDE, warn = F)),
       date_time = as.POSIXct(paste(ACTUAL.DATE, TIME), format = '%d/%m/%Y %H:%M:%S', tz = 'UTC'),
-      WARNINGS = ifelse(is.na(WARNINGS),  '', WARNINGS),
+      low_confidence = ifelse(grepl('Low confidence', WARNINGS), 1, 0),
+            WARNINGS = gsub('Low confidence', '', ifelse(is.na(WARNINGS),  '', WARNINGS)),
       floored_datetime = lubridate::floor_date(date_time, paste(params$params_list$timeBreaks, 'minutes')),
       survey_date = as.Date(SURVEY.DATE, format = '%d/%m/%Y', tz = 'UTC')
     ) %>%
@@ -133,7 +134,7 @@ date_string <-
                'of', y[3], y[4])
     return(y)
   }
-# cat('\\renewcommand{\\familydefault}{\\sfdefault}')
+
 cat('\\sectionfont{\\fontsize{11}{11}\\selectfont}')
 if(params$params_list$deploymentSummary){
   cat('\\subsection{Deployment Summary}')
@@ -210,9 +211,14 @@ bbs_summary <-
       dplyr::group_by(SCIENTIFIC.NAME, ENGLISH.NAME, WARNINGS) %>%
       dplyr::summarise(
         maximum.classification.probability = max(PROBABILITY, na.rm = T),
-        number.of.records = dplyr::n()
+        number.of.records = dplyr::n(),
+        number.low.confidence = sum(low_confidence)
       ) %>%
       dplyr::ungroup() %>%
+      dplyr::mutate(
+        WARNINGS = ifelse(number.low.confidence > 0, 
+                          ifelse(WARNINGS == '', paste(number.low.confidence, 'records with "Low confidence" warning'), paste(WARNINGS, paste(number.low.confidence, 'records with "Low confidence" warning'), sep = '; ')), WARNINGS
+      )) %>%
       dplyr::relocate(WARNINGS, .after =  ncol(.)) %>%
       dplyr::arrange(-number.of.records) %>%
       dplyr::rename_with(.fn = function(x){stringr::str_to_title(gsub('\\.', ' ', x))}) %>%
