@@ -1,0 +1,681 @@
+---
+output: 
+  pdf_document:
+    df_print: kable
+    latex_engine: xelatex
+    
+params:
+  params_list: !r NULL
+
+
+always_allow_html: true
+
+header-includes:
+   - \usepackage{sectsty}
+   - \usepackage{dcolumn}
+   - \usepackage{float}
+   - \usepackage{caption}
+   - \usepackage{placeins}
+   - \usepackage{tabu}
+   - \usepackage{titling}
+   - \usepackage[scaled]{helvet}
+   - \usepackage[T1]{fontenc}
+   - \renewcommand{\familydefault}{\sfdefault}
+   - \pretitle{\begin{center}\huge\bfseries}
+   - \posttitle{\end{center}}  
+---
+---
+title: `r gsub('_', ' ', params$params_list$name)`
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(knitr.table.format = "latex") 
+```
+
+```{r packages, echo = FALSE, message = FALSE, warning = FALSE}
+packs <-
+  c(
+    # data manipulation
+    'magrittr',
+    'dplyr',
+    'lubridate',
+    'stringr',
+    
+    # map
+    'leaflet',
+    'htmlwidgets',
+    'webshot',
+    
+    # tz
+    'lutz',
+    
+    # tables
+    'knitr',
+    'kableExtra',
+    
+    # plotting
+    'ggplot2',
+    'patchwork',
+    
+    # latex
+    'tinytex'
+  )
+
+invisible(
+  lapply(
+    packs,
+    library,
+    character.only = T
+  )
+)
+
+# ggplot theme fonts
+font_theme <-
+  ggplot2::theme(
+    plot.title    = element_text(family = "Helvetica"),
+    plot.subtitle = element_text(family = "Helvetica"),
+    axis.title.x  = element_text(family = "Helvetica"),
+    axis.title.y  = element_text(family = "Helvetica"),
+    axis.text.x   = element_text(family = "Helvetica"),
+    axis.text.y   = element_text(family = "Helvetica")
+  )
+
+```
+
+```{r dataLoad, echo = FALSE}
+bbs_data <-
+  params$params_list$df 
+if(nrow(bbs_data) == 0L){
+  cat('No data selected.')
+  knitr::knit_exit()
+}else{
+  
+  bbs_data <-
+    bbs_data %>%
+    as.data.frame() %>%
+    dplyr::mutate(
+      tz = as.character(lutz::tz_lookup_coords(lat = LATITUDE, lon = LONGITUDE, warn = F)),
+      date_time = as.POSIXct(paste(ACTUAL.DATE, TIME), format = '%d/%m/%Y %H:%M:%S', tz = 'UTC'),
+      WARNINGS = ifelse(is.na(WARNINGS),  '', WARNINGS),
+      floored_datetime = lubridate::floor_date(date_time, paste(params$params_list$timeBreaks, 'minutes')),
+      survey_date = as.Date(SURVEY.DATE, format = '%d/%m/%Y', tz = 'UTC')
+    ) %>%
+    dplyr::rowwise() %>% 
+    dplyr::mutate(
+      date_time = lubridate::force_tz(date_time, tz),
+      floored_datetime = lubridate::force_tz(floored_datetime, tz)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(
+      PROBABILITY >= params$params_list$detectionProb[1],
+      PROBABILITY <= params$params_list$detectionProb[2],
+    )
+  if(nrow(bbs_data) == 0L){
+    cat('No data within the range of classifier accuracy selected.')
+    knitr::knit_exit()
+  }
+  font_scale <- 1
+}
+```
+
+
+```{r deploymentSummary, echo = FALSE, results = 'asis'}
+date_string <-
+  function(x){
+    y<-
+      x %>%
+      format('%A %d %B %Y') %>% 
+      strsplit(' ') %>% 
+      unlist()
+    y <- paste(y[1], 'the', 
+               paste0(as.numeric(y[2]), ifelse(as.numeric(y[2]) %in% c(1,21,31), 'st', ifelse(as.numeric(y[2]) %in% c(2,22), 'nd', ifelse(as.numeric(y[2]) %in% c(3,23), 'rd', 'th')))),
+               'of', y[3], y[4])
+    return(y)
+  }
+# cat('\\renewcommand{\\familydefault}{\\sfdefault}')
+cat('\\sectionfont{\\fontsize{11}{11}\\selectfont}')
+if(params$params_list$deploymentSummary){
+  cat('\\subsection{Deployment Summary}')
+  cat(
+    paste0(
+      'You deployed your detector for  ',
+      length(unique(bbs_data$SURVEY.DATE)),
+      ifelse(length(unique(bbs_data$SURVEY.DATE)) == 1, ' night', ' nights'),
+      ' between the night starting on ', 
+      date_string(sort(unique(bbs_data$survey_date))[1]),
+      ' and finishing on the night starting on ',
+      date_string(rev(sort(unique(bbs_data$survey_date)))[1]),'.'
+    )
+  )
+  cat(' \\newline \\newline ')
+  
+  deployment_map <-
+    leaflet::leaflet(data = data.frame(lng = unique(bbs_data$LONGITUDE), lat = unique(bbs_data$LATITUDE)), options = leaflet::leafletOptions(zoomControl = FALSE, minZoom = 4, maxZoom = 16)) %>%
+    leaflet::addTiles() %>%
+    leaflet::addCircleMarkers(color = 'darkred', fillColor = NA,opacity = 1, radius = 25) %>%
+    leaflet::addCircleMarkers(color = 'darkred', fillColor = 'darkred',opacity = 1, radius = 1) %>%
+    leaflet::addScaleBar(position = 'bottomright')
+  
+  htmlwidgets::saveWidget(deployment_map, file="deployment_map.html", selfcontained=TRUE)
+  invisible(
+    webshot::webshot("deployment_map.html", file = "deployment_map.png")
+  )
+}
+```
+
+```{r displayMap, echo = FALSE, results = 'asis', fig.pos='H'}
+if(params$params_list$deploymentSummary){
+  cat('\\captionsetup[figure]{labelformat = empty}')
+  cat('\\begin{center}')
+  cat('\\includegraphics[width=0.5\\columnwidth]{deployment_map.png}')
+  cat('\\captionof{figure}{Detector Location}')
+  cat('\\end{center}')
+}
+shiny::setProgress(0.2)
+```
+
+
+```{r dataSplit, echo = FALSE}
+sp_groups <- 
+  params$params_list$spGroups %>%
+  .[which(. %in% unique(bbs_data$SPECIES.GROUP))]
+
+bbs_data_split <-
+  sp_groups %>%
+  lapply(
+    function(x){
+      return(bbs_data[which(bbs_data$SPECIES.GROUP == x),])
+    }
+  )
+
+num_rows <-
+  bbs_data_split %>%
+  lapply(nrow) %>%
+  unlist()
+
+if(all(num_rows == 0L)){
+  cat('No data in the selected species groups.')
+  knitr::knit_exit()
+}
+
+```
+
+```{r dataSummary, echo = FALSE}
+bbs_summary <-
+  bbs_data_split %>%
+  lapply(function(x){
+    y <-
+      x %>%
+      dplyr::group_by(SCIENTIFIC.NAME, ENGLISH.NAME, WARNINGS) %>%
+      dplyr::summarise(
+        maximum.classification.probability = max(PROBABILITY, na.rm = T),
+        number.of.records = dplyr::n()
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::relocate(WARNINGS, .after =  ncol(.)) %>%
+      dplyr::arrange(-number.of.records) %>%
+      dplyr::rename_with(.fn = function(x){stringr::str_to_title(gsub('\\.', ' ', x))}) %>%
+      dplyr::select(params$params_list$selectedColumns) %>%
+      suppressMessages()
+    return(y)
+  })
+```
+
+```{r summaryPrint, echo = FALSE, results = 'asis'}
+cat('\\captionsetup[table]{labelformat=empty, justification=raggedright, singlelinecheck=false, font = normalsize}')
+cat('\\renewcommand{\\arraystretch}{2}')
+if(params$params_list$speciesTables == T){
+  cat('\\subsection{Species found}')
+  
+  col_widths <-
+    data.frame(
+      col_name = c('Scientific Name', 'English Name', 'Maximum Classification Probability', 'Number Of Records', 'Warnings'),
+      width = c(40, 42, 25, 15, 24.5)
+    ) %>%
+    dplyr::filter(
+      col_name %in% params$params_list$selectedColumns
+    ) %>%
+    dplyr::mutate(
+      width = width + ((146.5 - sum(width)) / nrow(.))
+    )
+  
+  for(i in 1:length(sp_groups)){
+    cat(
+      knitr::kable(
+        bbs_summary[[i]],
+        caption = paste0('\\textbf{',stringr::str_to_title(sp_groups[i]),'s', '}'), label = NA
+        ) %>%
+        kableExtra::kable_styling(font_size = 9*font_scale,
+                                  latex_options = c("HOLD_position")) %>%
+        kableExtra::row_spec(0, bold=TRUE) %>%
+        kableExtra::column_spec(which(colnames(bbs_summary[[i]]) =='English Name'), width = paste0(col_widths$width[col_widths$col_name == 'English Name'],"mm")) %>%
+        kableExtra::column_spec(which(colnames(bbs_summary[[i]]) =='Warnings'), width = paste0(col_widths$width[col_widths$col_name == 'Warnings'],"mm")) %>%
+        kableExtra::column_spec(which(colnames(bbs_summary[[i]]) =='Scientific Name'), width = paste0(col_widths$width[col_widths$col_name == 'Scientific Name'],"mm"), italic = T) %>%
+          kableExtra::column_spec(which(colnames(bbs_summary[[i]]) =='Maximum Classification Probability'), width = paste0(col_widths$width[col_widths$col_name == 'Maximum Classification Probability'],"mm")) %>%
+        kableExtra::column_spec(which(colnames(bbs_summary[[i]]) =='Number Of Records'), width = paste0(col_widths$width[col_widths$col_name == 'Number Of Records'],"mm"))
+    )
+  }
+}
+shiny::setProgress(0.4)
+```
+
+```{r phasesOfNight, echo = FALSE, fig.width = 7, fig.height = 0.5, fig.align='center', results = 'asis'}
+font_size <- 3*font_scale
+
+if(params$params_list$timePlots){
+  if(params$params_list$speciesTables){#} || params$params_list$deploymentSummary){
+    cat('\\newpage')
+  }
+  cat('\\subsection{Records per night}')
+  np <- params$params_list$selectedNightPhases
+  if(length(np) >0L){
+    cat(paste0('These plots show when different species were active during the recording period in ', params$params_list$timeBreaks, '-minute intervals, with phases of night also shown.'))
+    ggplot()+
+      {if('Civil Twilight' %in% np)
+        annotate('rect', xmin = (33/(length(np)+1))-1, xmax = (33/(length(np)+1)), ymin = 0, ymax = 1, fill = 'gray70', color = 'black')}+
+      {if('Civil Twilight' %in% np)
+        annotate('text', x = (33/(length(np)+1))+0.2, y = 0.5, label = 'Civil\nTwilight', hjust = 0, size = font_size, family= 'Helvetica')}+
+      
+      {if('Nautical Twilight' %in% np)
+        annotate('rect', xmin = which(np == 'Nautical Twilight')*(33/(length(np)+1))-1, xmax = which(np == 'Nautical Twilight')*(33/(length(np)+1)), ymin = 0, ymax = 1, fill = 'gray60', color = 'black')}+
+      {if('Nautical Twilight' %in% np)
+        annotate('text', x = which(np == 'Nautical Twilight')*(33/(length(np)+1))+0.2, y = 0.5, label = 'Nautical\nTwilight', hjust = 0, size = font_size, family= 'Helvetica')}+
+      
+      {if('Astronomical Twilight' %in% np)
+        annotate('rect', xmin = which(np == 'Astronomical Twilight')*(33/(length(np)+1))-1, xmax = which(np == 'Astronomical Twilight')*(33/(length(np)+1)), ymin = 0, ymax = 1, fill = 'gray50', color = 'black')}+
+      {if('Astronomical Twilight' %in% np)
+        annotate('text', x = which(np == 'Astronomical Twilight')*(33/(length(np)+1))+0.2, y = 0.5, label = 'Astronomical\nTwilight', hjust = 0, size = font_size, family= 'Helvetica')}+
+      
+      {if('Night' %in% np)
+        annotate('rect', xmin = which(np == 'Night')*(33/(length(np)+1))-1, xmax = which(np == 'Night')*(33/(length(np)+1)), ymin = 0, ymax = 1, fill = 'gray40', color = 'black')}+
+      {if('Night' %in% np)annotate('text', x = which(np == 'Night')*(33/(length(np)+1))+0.2, y = 0.5, label = 'Night', hjust = 0, size = font_size, family= 'Helvetica')}+
+      coord_fixed(ylim = c(-0.5, 1.5), xlim = c(-1,32))+
+      theme_void()
+  }else{
+    cat(paste0('These plots show when different species were active during the recording period in ', params$params_list$timeBreaks, '-minute intervals.'))
+  }
+}
+```
+
+```{r recordsPerNight, echo = FALSE, fig.width = 30, fig.height = 12, results = 'asis'}
+if(params$params_list$timePlots == T){
+  bbs_agg <-
+    bbs_data_split %>% 
+    lapply(
+      function(x){
+        y <-
+          x %>%
+          dplyr::group_by(ENGLISH.NAME, SCIENTIFIC.NAME, SURVEY.DATE, survey_date, floored_datetime) %>%
+          dplyr::tally()
+        return(y)
+      }
+    )
+  timeFacets <- as.numeric(as.character(params$params_list$timeFacets))
+  for(h in 1:length(bbs_agg)){
+    for(i in 1:length(unique(bbs_agg[[h]]$ENGLISH.NAME))){
+      sp <- sort(unique(bbs_agg[[h]]$ENGLISH.NAME))[i]
+      tmp <-
+        bbs_agg[[h]] %>%
+        dplyr::filter(ENGLISH.NAME == sp)
+      counter <- 0
+      if(params$params_list$emptyDays){
+        potential_days <- sort(unique(bbs_data$survey_date))
+      }else{
+        potential_days <- sort(unique(tmp$survey_date))
+      }
+      for(ii in 1:ceiling(length(potential_days)/timeFacets)){
+        sp_list <- list()
+        count <- 0
+        for(j in 1:timeFacets){
+          counter<- counter+1
+          this_survey_date <- potential_days[counter]
+          if(!is.na(this_survey_date)){
+            tmp2 <-
+              tmp %>%
+              dplyr::filter(survey_date == this_survey_date)
+            
+            sun <-
+              suncalc::getSunlightTimes(
+                date =
+                  c(this_survey_date,
+                    this_survey_date+1),
+                lon = bbs_data$LONGITUDE[1],
+                lat = bbs_data$LATITUDE[1],
+                tz = bbs_data$tz[1]#'Europe/London'
+              )
+            sun_toplot <-
+              data.frame(
+                light = c('sun', 'dusk_dawn', 'nautical', 'night'),
+                datetime_start = c(sun$sunset[1], sun$dusk[1],sun$nauticalDusk[1], sun$night[1]),
+                datetime_end = c(sun$sunrise[2], sun$dawn[2], sun$nauticalDawn[2], sun$nightEnd[2])
+              )
+            
+            if(nrow(tmp2) == 0L){
+              tmp2 <-
+                tmp[1,] %>%
+                dplyr::mutate(
+                  SURVEY.DATE =as.character(format(this_survey_date, '%d/%m/%Y')),
+                  n=0
+                )
+            }
+            
+            if(j==1){
+              y_lab <- 'Number of Recordings'
+            }else{
+              y_lab <- ''
+            }
+            
+            tp <-
+              ggplot()+
+              # civil twilight
+              {if('Civil Twilight' %in% np)
+                annotate('rect', xmin = sun_toplot$datetime_start[1], xmax = sun_toplot$datetime_end[1],
+                         ymin = 0, ymax = max(c(5, 1+max(tmp$n, na.rm=T))), fill = 'gray70', alpha = 1)}+
+              # nautical twilight
+              {if('Nautical Twilight' %in% np)
+                annotate('rect', xmin = sun_toplot$datetime_start[2], xmax = sun_toplot$datetime_end[2],
+                         ymin = 0, ymax = max(c(5, 1+max(tmp$n, na.rm=T))), fill = 'gray60', alpha = 1)}+
+              # astronomical twilight
+              {if('Astronomical Twilight' %in% np)
+                annotate('rect', xmin = sun_toplot$datetime_start[3], xmax = sun_toplot$datetime_end[3],
+                         ymin = 0, ymax = max(c(5, 1+max(tmp$n, na.rm=T))), fill = 'gray50', alpha = 1)}+
+              # night to night end
+              {if('Night' %in% np)
+                annotate('rect', xmin = sun_toplot$datetime_start[4], xmax = sun_toplot$datetime_end[4],
+                         ymin = 0, ymax = max(c(5, 1+max(tmp$n, na.rm=T))), fill = 'gray40', alpha = 1)}+
+              geom_col(
+                data = tmp2, aes(x = floored_datetime, y = n),
+                width = 60*params$params_list$timeBreaks, 
+                position = position_nudge(60*params$params_list$timeBreaks/2),
+                col = 'white', fill = '#668019', lwd = 1.5
+              )+
+              labs(title = tmp2$SURVEY.DATE)+
+              scale_y_continuous(
+                y_lab,
+                breaks = pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))),
+                labels = 
+                  unlist(sapply(pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))), function(aa){paste0(c(rep('  ', (5-nchar(as.character(aa)))),aa), collapse = '')}))
+              )+
+              scale_x_datetime(
+                '',
+                limits =
+                  c(
+                    sun_toplot$datetime_start[1]-60*120,
+                    sun_toplot$datetime_end[1]+60*120
+                  ),
+                date_breaks = '2 hour',date_labels = '%H:%M'
+              )+
+              coord_cartesian(
+                ylim = c(0, max(c(5, 1+max(tmp$n, na.rm=T)))),
+                expand = F
+              )+
+              theme_bw()
+            
+            y_intercept <- ggplot_build(tp)$layout$panel_params[[1]]$y$breaks
+            sp_list[[count+1]] <- 
+              tp + 
+              {if(params$params_list$horizontalGridTime == T)
+                geom_hline(yintercept=y_intercept, color="grey92", linewidth=1)}+
+              {if(params$params_list$horizontalGridTime == T)
+                geom_col(
+                  data = tmp2, aes(x = floored_datetime, y = n),
+                  width = 60*params$params_list$timeBreaks,
+                  position = position_nudge(60*params$params_list$timeBreaks/2),
+                  col = 'white', fill = '#668019', lwd = 1.5)
+              } +
+              font_theme + 
+              theme(
+                panel.grid.minor = element_blank(),
+                panel.grid.major = element_blank(),
+                plot.title = element_text(hjust = 0.5, size = 35*font_scale),
+                axis.title = element_text(size = 35*font_scale),
+                axis.text.x = element_text(size = 30*font_scale, angle = 90,vjust = 0.5),
+                axis.text.y = element_text(size = 30*font_scale),
+                plot.margin = margin(1, 1, 1, 1, "cm")
+              )
+            count <- count +1
+          }else{
+            if(j==1){
+              y_lab <- 'Number of Recordings'
+            }else{
+              y_lab <- ''
+            }
+            col<-'white'
+            
+            sp_list[[count+1]] <-
+              ggplot()+
+              geom_col(
+                data = tmp2, aes(x = floored_datetime, y = n),
+                width = 60*params$params_list$timeBreaks, 
+                position = position_nudge(60*params$params_list$timeBreaks/2),
+                col = col, fill = col, lwd = 1.5
+              )+
+              labs(title = tmp2$SURVEY.DATE)+
+              scale_y_continuous(
+                y_lab,
+                breaks = pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))),
+                labels = 
+                  unlist(sapply(pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))), function(aa){paste0(c(rep('  ', (5-nchar(as.character(aa)))),aa), collapse = '')}))
+              )+
+              scale_x_datetime(
+                '',
+                limits =
+                  c(
+                    sun_toplot$datetime_start[1]-60*120,
+                    sun_toplot$datetime_end[1]+60*120
+                  ),
+                date_breaks = '2 hour',date_labels = '%H:%M'
+              )+
+              coord_cartesian(
+                ylim = c(0, max(c(5, 1+max(tmp$n, na.rm=T)))),
+                expand = F
+              )+
+              font_theme + 
+              theme_bw()+
+              theme(
+                panel.grid.minor = element_blank(),
+                panel.grid.major = element_blank(),
+                plot.title = element_text(hjust = 0.5, size = 35*font_scale, color = col),
+                axis.title = element_text(size = 35*font_scale, color = col),
+                axis.text.x = element_text(size = 30*font_scale, angle = 90,vjust = 0.5, color = col),
+                axis.text.y = element_text(size = 30*font_scale, color = col),
+                plot.margin = margin(1, 1, 1, 1, "cm"),
+                axis.ticks = element_line(color = col),
+                panel.border = element_rect(color = col)
+              )
+            count <- count +1
+          }
+        }
+        if(i == 1 && ii == 1){
+          suppressWarnings(
+            plot(
+              patchwork::wrap_plots(
+                sp_list, 
+                ncol=timeFacets
+              ) +
+              patchwork::plot_annotation(
+                title = paste0(stringr::str_to_title(sp_groups[h]),'s\n'),
+                subtitle = substitute('\n'*x ~ '(' * italic(y) * ')', list(x=tmp$ENGLISH.NAME, y= tmp$SCIENTIFIC.NAME[1])),
+                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica'))
+              )
+            )
+          )
+        }else if (ii == 1){
+          suppressWarnings(
+            plot(
+              patchwork::wrap_plots(
+                sp_list, 
+                ncol=timeFacets
+              ) +
+              patchwork::plot_annotation(
+                title = '\n',
+                subtitle = substitute(x ~ '(' * italic(y) * ')', list(x=tmp$ENGLISH.NAME, y= tmp$SCIENTIFIC.NAME[1])),
+                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica'))
+              )
+            )
+          )
+        }else{
+          suppressWarnings(
+            plot(
+              patchwork::wrap_plots(
+                sp_list, 
+                ncol=timeFacets
+              )
+              +
+              patchwork::plot_annotation(
+                title = '\n',
+                subtitle = '',
+                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica'))
+              )
+            )
+          )
+        }
+        cat('\\newline \\newline')
+      }
+    }
+  }
+}
+shiny::setProgress(0.6)
+```
+
+```{r speciesClassification, echo = FALSE, results = 'asis', fig.height = 12, fig.width = 30}
+if(params$params_list$detectionPlots == T){
+  if(params$params_list$speciesTables ||  params$params_list$timePlots || params$params_list$deploymentSummary){
+    cat('\\newpage')
+  }
+  col<-'white'
+  cat('\\subsection{Classification Probability}')
+  cat(paste0('These plots show histograms of classification probability for each recording (in ', params$params_list$detectionBreaks*100, '% intervals), the higher the probability, the more certain the classifer is that a species was present in an individual recording.'))
+  cat('\\newline')
+  cat('\\FloatBarrier')
+  detectionFacets <- as.numeric(as.character(params$params_list$detectionFacets))
+  for(h in 1:length(bbs_data_split)){
+    tmp0 <- bbs_data_split[[h]]
+    counter <- 0
+    for(hh in 1:ceiling(length(unique(tmp0$ENGLISH.NAME))/detectionFacets)){
+      detection_prob<- list()
+      for(i in 1:detectionFacets){
+        counter<- counter+1
+        sp <- sort(unique(tmp0$ENGLISH.NAME))[counter]
+        if(!is.na(sp)){
+          tmp <- 
+            tmp0 %>%
+            dplyr::filter(ENGLISH.NAME == sp) %>%
+            dplyr::mutate(
+              floored_probability = floor(PROBABILITY*(1/params$params_list$detectionBreaks))/(1/params$params_list$detectionBreaks)
+            ) %>%
+            dplyr::group_by(SCIENTIFIC.NAME, ENGLISH.NAME, floored_probability) %>%
+            dplyr::tally()
+          
+          if(i==1){
+            y_lab <- 'Number of Recordings\n'
+          }else{
+            y_lab <- ''
+          }
+          
+          dp <-
+            ggplot(data = tmp, aes(floored_probability, n))+
+            geom_col(width = params$params_list$detectionBreaks, fill = '#668019', color = 'white', position = position_nudge(params$params_list$detectionBreaks/2))+
+            scale_x_continuous('\nClassification Probability', 
+                               breaks = seq(0,1,0.2))+
+            scale_y_continuous(y_lab, 
+                               breaks = pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))),
+                               labels = unlist(sapply(pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))), function(aa){paste0(c(rep('  ', (5-nchar(as.character(aa)))), aa), collapse = '')})))+
+            coord_cartesian(
+              ylim = c(0, max(c(5, 1+max(tmp$n, na.rm=T)))),
+              xlim = c(0,1),
+              expand = T
+            ) +
+            labs(title = bquote(atop(.(tmp$ENGLISH.NAME),'('*italic(.(tmp$SCIENTIFIC.NAME))*')')))+
+            theme_bw()+
+            font_theme +
+            theme(
+              panel.grid.minor = element_blank(),
+              panel.border = element_rect(fill = NA, color = 'grey20'),
+              plot.title = element_text(hjust = 0.5, size = 35*font_scale),
+              axis.title = element_text(size = 35*font_scale),
+              axis.text = element_text(size = 30*font_scale),
+              plot.margin = margin(1,1,1,1,'cm')
+            )
+          if(!params$params_list$horizontalGridDetection){
+            dp <- 
+              dp +
+              theme(
+                panel.grid.major.y = element_blank()
+              )
+          }
+          if(!params$params_list$verticalGridDetection){
+            dp <- 
+              dp +
+              theme(
+                panel.grid.major.x = element_blank()
+              )
+          }
+          
+          detection_prob[[i]] <- dp
+        }else{
+          if(i==1){
+            y_lab <- 'Number of Recordings\n'
+          }else{
+            y_lab <- ''
+          }
+          
+          dp <-
+            ggplot(data = tmp, aes(floored_probability, n))+
+            geom_col(width = params$params_list$detectionBreaks, fill = NA, color = NA, position = position_nudge(params$params_list$detectionBreaks/2))+
+            scale_x_continuous('\nClassification Probability', 
+                               breaks = seq(0,1,0.2))+
+            scale_y_continuous(y_lab, 
+                               breaks = pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))),
+                               labels = unlist(sapply(pretty(c(0, max(c(5, max(tmp$n, na.rm=T))))), function(aa){paste0(c(rep('  ', (5-nchar(as.character(aa)))), aa), collapse = '')})))+
+            coord_cartesian(
+              ylim = c(0, max(c(5, 1+max(tmp$n, na.rm=T)))),
+              xlim = c(0,1),
+              expand = T
+            ) +
+            labs(title = bquote(atop('',.(tmp$ENGLISH.NAME),'('*italic(.(tmp$SCIENTIFIC.NAME))*')')))+
+            theme_bw()+
+            font_theme +
+            theme(
+              panel.grid = element_blank(),
+              plot.title = element_text(hjust = 0.5, size = 35*font_scale, color = col),
+              axis.title = element_text(size = 35*font_scale, color = col),
+              axis.text = element_text(size = 30*font_scale, color = col),
+              plot.margin = margin(1,1,1,1,'cm'),
+              axis.ticks = element_line(color = col),
+              panel.border = element_rect(color = col)
+            )
+          
+          detection_prob[[i]] <- dp
+        }
+      }
+      if(hh == 1){
+        plot(
+          patchwork::wrap_plots(
+            detection_prob, 
+            ncol= detectionFacets
+          ) +
+            patchwork::plot_annotation(
+              title = paste0(stringr::str_to_title(sp_groups[h]),'s'),
+              theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'))
+            )
+        )
+      }else{
+        plot(
+          patchwork::wrap_plots(
+            detection_prob, 
+            ncol= detectionFacets
+          ) +
+            patchwork::plot_annotation(
+              title = '',
+              theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'))
+            )
+        )
+      }
+      cat('\\newline \\newline')
+    }
+  }
+}
+shiny::setProgress(0.8)
+```
