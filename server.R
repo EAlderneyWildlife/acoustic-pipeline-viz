@@ -23,6 +23,25 @@ showElements <- function(elementsId){
   })
 }
 
+old_colnames <-
+  c("RECORDING.FILE.NAME", "ORIGINAL.FILE.NAME",
+    "ORIGINAL.FILE.PART", "LATITUDE",
+    "LONGITUDE", "SPECIES", "SCIENTIFIC.NAME",
+    "ENGLISH.NAME", "SPECIES.GROUP",
+    "PROBABILITY", "WARNINGS", "ACTUAL.DATE",
+    "SURVEY.DATE", "TIME", "CLASSIFIER.NAME",
+    "USER.ID", "UPLOAD.KEY", "UPLOAD.NAME",
+    "SURVEY.NAME"
+    )
+
+new_colnames <-
+  c("RECORDING.FILE.NAME",  "ORIGINAL.FILE.NAME",  "ORIGINAL.FILE.PART",  
+    "LATITUDE",  "LONGITUDE",  "SPECIES",  "SCIENTIFIC.NAME",  "ENGLISH.NAME",  
+    "SPECIES.GROUP",  "PROBABILITY",  "WARNINGS",  "CALL.TYPE",  "ACTUAL.DATE",  
+    "SURVEY.DATE",  "TIME",  "CLASSIFIER.NAME",  "USER.ID",  "UPLOAD.KEY",  
+    "BATCH.NAME",  "PROJECT.NAME"
+    )
+
 function(input, output, session) {
   hideElements(c('selectedFiles', 'customizeBox', 'report'))
   observeEvent(
@@ -39,14 +58,9 @@ function(input, output, session) {
       }else{
         inFile <- input$upload
         df <- inFile$datapath %>% lapply(read.csv) %>% dplyr::bind_rows() %>% dplyr::distinct()
-        if(all(colnames(df) %in% c("RECORDING.FILE.NAME", "ORIGINAL.FILE.NAME",
-                                     "ORIGINAL.FILE.PART", "LATITUDE",
-                                     "LONGITUDE", "SPECIES", "SCIENTIFIC.NAME",
-                                     "ENGLISH.NAME", "SPECIES.GROUP",
-                                     "PROBABILITY", "WARNINGS", "ACTUAL.DATE",
-                                     "SURVEY.DATE", "TIME", "CLASSIFIER.NAME",
-                                     "USER.ID", "UPLOAD.KEY", "UPLOAD.NAME",
-                                     "SURVEY.NAME"))){
+        if(all(colnames(df) %in% old_colnames) |
+           all(colnames(df) %in% new_colnames)
+           ){
           showElements(c('customizeBox', 'report'))
           if(nrow(input$upload) > 1L){
             showElements(c('selectedFiles'))
@@ -143,14 +157,8 @@ function(input, output, session) {
           return(NULL)
         }else{
           df <- inFile$datapath %>% lapply(read.csv) %>% dplyr::bind_rows() %>% dplyr::distinct()
-          if(any(!(colnames(df) %in% c("RECORDING.FILE.NAME", "ORIGINAL.FILE.NAME", 
-                                       "ORIGINAL.FILE.PART", "LATITUDE", 
-                                       "LONGITUDE", "SPECIES", "SCIENTIFIC.NAME", 
-                                       "ENGLISH.NAME", "SPECIES.GROUP", 
-                                       "PROBABILITY", "WARNINGS", "ACTUAL.DATE", 
-                                       "SURVEY.DATE", "TIME", "CLASSIFIER.NAME", 
-                                       "USER.ID", "UPLOAD.KEY", "UPLOAD.NAME", 
-                                       "SURVEY.NAME")))){
+          if(any(!(colnames(df) %in% old_colnames)) &
+             any(!colnames(df) %in% new_colnames)){
             showModal(modalDialog(
               title = "Warning",
               "Please only upload .csv files output from the BTO's Acoustic Pipeline",
