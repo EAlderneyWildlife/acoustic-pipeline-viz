@@ -103,7 +103,8 @@ if(nrow(bbs_data) == 0L){
     dplyr::rowwise() %>% 
     dplyr::mutate(
       date_time = lubridate::force_tz(date_time, tz),
-      floored_datetime = lubridate::force_tz(floored_datetime, tz)
+      floored_datetime = lubridate::force_tz(floored_datetime, tz),
+      WARNINGS = ifelse(is.na(WARNINGS), '', WARNINGS)
     ) %>%
     dplyr::ungroup() %>%
     dplyr::filter(
@@ -155,11 +156,8 @@ if(params$params_list$deploymentSummary){
     leaflet::addCircleMarkers(color = 'darkred', fillColor = NA,opacity = 1, radius = 25) %>%
     leaflet::addCircleMarkers(color = 'darkred', fillColor = 'darkred',opacity = 1, radius = 1) %>%
     leaflet::addScaleBar(position = 'bottomright')
-  
   htmlwidgets::saveWidget(deployment_map, file="deployment_map.html", selfcontained=TRUE)
-  invisible(
-    webshot::webshot("deployment_map.html", file = "deployment_map.png")
-  )
+  invisible(webshot::webshot("deployment_map.html", file = "deployment_map.png"))
 }
 ```
 
@@ -216,13 +214,19 @@ bbs_summary <-
       dplyr::summarize(
         maximum.classification.probability = max(maximum.classification.probability, na.rm = T),
         number.of.records = sum(number.of.records),
-        WARNINGS = paste0(number.of.records, ' records with "', WARNINGS, '" warning', collapse = ';')) %>%
+        lab = ifelse(number.of.records == 1, ' record with "', ' records with "'),
+        WARNINGS = paste0(number.of.records, lab, WARNINGS, '" warning', collapse = ';')) %>%
       dplyr::ungroup() %>%
       dplyr::rowwise() %>%
       dplyr::mutate(
         WARNINGS = ifelse(grepl('records with "" warning', WARNINGS),
                           '',
-                          WARNINGS)
+                          ifelse(
+                            grepl('record with "" warning', WARNINGS),
+                                  '',
+                                  WARNINGS
+                                  )
+        )
       ) %>%
       dplyr::relocate(WARNINGS, .after =  ncol(.)) %>%
       dplyr::arrange(-number.of.records) %>%

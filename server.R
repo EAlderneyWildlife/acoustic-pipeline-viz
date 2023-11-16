@@ -8,7 +8,7 @@ library(magrittr)
 library(dplyr)
 library(webshot)
 if (!webshot::is_phantomjs_installed()) webshot::install_phantomjs()
-
+Sys.setenv(OPENSSL_CONF="/dev/null")
 options(shiny.maxRequestSize=30*1024^2) 
 
 hideElements <- function(elementsId){
