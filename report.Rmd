@@ -97,8 +97,6 @@ if(nrow(bbs_data) == 0L){
     dplyr::mutate(
       tz = as.character(lutz::tz_lookup_coords(lat = LATITUDE, lon = LONGITUDE, warn = F)),
       date_time = as.POSIXct(paste(ACTUAL.DATE, TIME), format = '%d/%m/%Y %H:%M:%S', tz = 'UTC'),
-      # low_confidence = ifelse(grepl('Low confidence', WARNINGS), 1, 0),
-      #       WARNINGS = gsub('Low confidence', '', ifelse(is.na(WARNINGS),  '', WARNINGS)),
       floored_datetime = lubridate::floor_date(date_time, paste(params$params_list$timeBreaks, 'minutes')),
       survey_date = as.Date(SURVEY.DATE, format = '%d/%m/%Y', tz = 'UTC')
     ) %>%
