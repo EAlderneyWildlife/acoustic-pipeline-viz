@@ -110,7 +110,7 @@ if(nrow(bbs_data) == 0L){
     dplyr::ungroup() %>%
     dplyr::filter(
       PROBABILITY >= params$params_list$detectionProb[1],
-      PROBABILITY <= params$params_list$detectionProb[2],
+      PROBABILITY <= params$params_list$detectionProb[2]
     )
   if(nrow(bbs_data) == 0L){
     cat('No data within the range of classifier accuracy selected.')
@@ -211,14 +211,26 @@ bbs_summary <-
       dplyr::group_by(SCIENTIFIC.NAME, ENGLISH.NAME, WARNINGS) %>%
       dplyr::summarise(
         maximum.classification.probability = max(PROBABILITY, na.rm = T),
-        number.of.records = dplyr::n(),
-        number.low.confidence = sum(low_confidence)
+        number.of.records = dplyr::n()#,
+        #number.low.confidence = sum(low_confidence)
       ) %>%
       dplyr::ungroup() %>%
+      dplyr::group_by(SCIENTIFIC.NAME, ENGLISH.NAME) %>%
+      dplyr::summarize(
+        maximum.classification.probability = max(maximum.classification.probability, na.rm = T),
+        number.of.records = sum(number.of.records),
+        WARNINGS = paste0(number.of.records, ' records with "', WARNINGS, '" warning', collapse = ';')) %>%
+      dplyr::ungroup() %>%
+      dplyr::rowwise() %>%
       dplyr::mutate(
-        WARNINGS = ifelse(number.low.confidence > 0, 
-                          ifelse(WARNINGS == '', paste(number.low.confidence, 'records with "Low confidence" warning'), paste(WARNINGS, paste(number.low.confidence, 'records with "Low confidence" warning'), sep = '; ')), WARNINGS
-      )) %>%
+        WARNINGS = ifelse(grepl('records with "" warning', WARNINGS),
+                          '',
+                          WARNINGS)
+      
+      #   WARNINGS = ifelse(number.low.confidence > 0, 
+      #                     ifelse(WARNINGS == '', paste(number.low.confidence, 'records with "Low confidence" warning'), paste(WARNINGS, paste(number.low.confidence, 'records with "Low confidence" warning'), sep = '; ')), WARNINGS
+      # )) %>%
+      ) %>%
       dplyr::relocate(WARNINGS, .after =  ncol(.)) %>%
       dplyr::arrange(-number.of.records) %>%
       dplyr::rename_with(.fn = function(x){stringr::str_to_title(gsub('\\.', ' ', x))}) %>%
