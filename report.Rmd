@@ -102,7 +102,7 @@ if(nrow(bbs_data) == 0L){
     ) %>%
     dplyr::rowwise() %>% 
     dplyr::mutate(
-      ENGLISH.NAME = paste0(ENGLISH.NAME, ' (',CALL.TYPE,')'),
+      ENGLISH.NAME = ifelse(CALL.TYPE == '', ENGLISH.NAME, ifelse(CALL.TYPE == 'feeding buzz', paste0(ENGLISH.NAME, ' - ', CALL.TYPE), paste0(ENGLISH.NAME, ' - ',CALL.TYPE,' call'))),
       date_time = lubridate::force_tz(date_time, tz),
       floored_datetime = lubridate::force_tz(floored_datetime, tz),
       WARNINGS = ifelse(is.na(WARNINGS), '', WARNINGS)
@@ -516,8 +516,10 @@ if(params$params_list$timePlots == T){
               ) +
               patchwork::plot_annotation(
                 title = paste0(stringr::str_to_title(sp_groups[h]),'s\n'),
-                subtitle = substitute('\n'*x ~ '(' * italic(y) * ')', list(x=tmp$ENGLISH.NAME, y= tmp$SCIENTIFIC.NAME[1])),
-                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica'))
+                subtitle = 
+                   bquote(atop(.(tmp$ENGLISH.NAME),'('*italic(.(tmp$SCIENTIFIC.NAME))*')')),
+              # substitute('\n'*x ~ '\n(' * italic(y) * ')', list(x=tmp$ENGLISH.NAME, y= tmp$SCIENTIFIC.NAME[1])),
+                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica', hjust = 0), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica', hjust=0))
               )
             )
           )
@@ -530,8 +532,10 @@ if(params$params_list$timePlots == T){
               ) +
               patchwork::plot_annotation(
                 title = '\n',
-                subtitle = substitute(x ~ '(' * italic(y) * ')', list(x=tmp$ENGLISH.NAME, y= tmp$SCIENTIFIC.NAME[1])),
-                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica'))
+                subtitle = 
+                  bquote(atop(.(tmp$ENGLISH.NAME),'('*italic(.(tmp$SCIENTIFIC.NAME))*')')),
+                  # substitute(x ~ '(' * italic(y) * ')', list(x=tmp$ENGLISH.NAME, y= tmp$SCIENTIFIC.NAME[1])),
+                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica', hjust = 0), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica', hjust=0))
               )
             )
           )
@@ -546,7 +550,7 @@ if(params$params_list$timePlots == T){
               patchwork::plot_annotation(
                 title = '\n',
                 subtitle = '',
-                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica'), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica'))
+                theme = ggplot2::theme(plot.title = element_text(size = 50*font_scale, face = 'bold', family = 'Helvetica', hjust=0), plot.subtitle = element_text(size = 40*font_scale, family = 'Helvetica', hjust=0))
               )
             )
           )
