@@ -102,6 +102,7 @@ if(nrow(bbs_data) == 0L){
     ) %>%
     dplyr::rowwise() %>% 
     dplyr::mutate(
+      ENGLISH.NAME = paste0(ENGLISH.NAME, ' (',CALL.TYPE,')'),
       date_time = lubridate::force_tz(date_time, tz),
       floored_datetime = lubridate::force_tz(floored_datetime, tz),
       WARNINGS = ifelse(is.na(WARNINGS), '', WARNINGS)
@@ -209,13 +210,17 @@ bbs_summary <-
         maximum.classification.probability = max(PROBABILITY, na.rm = T),
         number.of.records = dplyr::n()
       ) %>%
+      dplyr::mutate(
+        lab = ifelse(number.of.records == 1, ' record with "', ' records with "'),
+        WARNINGS = paste0(number.of.records, lab, WARNINGS, '" warning')
+      ) %>%
       dplyr::ungroup() %>%
       dplyr::group_by(SCIENTIFIC.NAME, ENGLISH.NAME) %>%
       dplyr::summarize(
         maximum.classification.probability = max(maximum.classification.probability, na.rm = T),
         number.of.records = sum(number.of.records),
-        lab = ifelse(number.of.records == 1, ' record with "', ' records with "'),
-        WARNINGS = paste0(number.of.records, lab, WARNINGS, '" warning', collapse = ';')) %>%
+        WARNINGS = paste(WARNINGS, collapse = '; ')
+        ) %>%
       dplyr::ungroup() %>%
       dplyr::rowwise() %>%
       dplyr::mutate(
