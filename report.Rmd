@@ -90,7 +90,6 @@ if(nrow(bbs_data) == 0L){
   cat('No data selected.')
   knitr::knit_exit()
 }else{
-  
   bbs_data <-
     bbs_data %>%
     as.data.frame() %>%
@@ -102,7 +101,7 @@ if(nrow(bbs_data) == 0L){
     ) %>%
     dplyr::rowwise() %>% 
     dplyr::mutate(
-      ENGLISH.NAME = ifelse(CALL.TYPE == '', ENGLISH.NAME, ifelse(CALL.TYPE == 'feeding buzz', paste0(ENGLISH.NAME, ' - ', CALL.TYPE), paste0(ENGLISH.NAME, ' - ',CALL.TYPE,' call'))),
+      ENGLISH.NAME = ifelse(is.na(CALL.TYPE), ENGLISH.NAME, ifelse(CALL.TYPE == '', ENGLISH.NAME, ifelse(CALL.TYPE == 'feeding buzz', paste0(ENGLISH.NAME, ' - ', CALL.TYPE), paste0(ENGLISH.NAME, ' - ',CALL.TYPE,' call')))),
       date_time = lubridate::force_tz(date_time, tz),
       floored_datetime = lubridate::force_tz(floored_datetime, tz),
       WARNINGS = ifelse(is.na(WARNINGS), '', WARNINGS)
